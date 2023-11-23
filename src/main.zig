@@ -29,9 +29,9 @@ const line_args = LineArgs{ .radius = 3 };
 const Pair = @Vector(2, *Ball);
 
 var lines = std.BoundedArray(Line, 8).init(0) catch {};
-var balls = std.BoundedArray(Ball, 256).init(0) catch {};
-var pairs = std.BoundedArray(Pair, 128).init(0) catch {};
-var fakes = std.BoundedArray(Ball, 128).init(0) catch {};
+var balls = std.BoundedArray(Ball, 128).init(0) catch {};
+var pairs = std.BoundedArray(Pair, 96).init(0) catch {};
+var fakes = std.BoundedArray(Ball, 64).init(0) catch {};
 
 var selected_ball: ?*Ball = null;
 var selected_line: ?*Line = null;

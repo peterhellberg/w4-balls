@@ -39,7 +39,8 @@ var selected_line_start: bool = false;
 
 var biggest: f32 = 0;
 
-var mouse: Mouse = .{};
+var mouse = Mouse{};
+var gamepads = Gamepads{};
 
 export fn start() void {
     init();
@@ -130,8 +131,9 @@ fn init() void {
 
 fn input() void {
     mouse.update();
+    gamepads.update();
 
-    if (mouse.rightReleased() or (w4.GAMEPAD1.* & w4.BUTTON_1 != 0)) {
+    if (mouse.rightReleased() or gamepads.b1(0) or gamepads.b2(0)) {
         var ball = newBall(mouse.x, mouse.y, .{
             .radius = 1 + (@round(random.float(f32) * 5)),
         });
@@ -544,6 +546,32 @@ const Mouse = struct {
 
     fn rightReleased(self: *Mouse) bool {
         return !(self.data.b & w4.MOUSE_RIGHT != 0) and (self.prev.b & w4.MOUSE_RIGHT != 0);
+    }
+};
+
+const Gamepads = struct {
+    prev: [4]u8 = .{0} ** 4,
+    data: [4]u8 = .{0} ** 4,
+
+    fn update(self: *Gamepads) void {
+        self.prev = self.data;
+
+        self.data[0] = w4.GAMEPAD1.*;
+        self.data[1] = w4.GAMEPAD2.*;
+        self.data[2] = w4.GAMEPAD3.*;
+        self.data[3] = w4.GAMEPAD4.*;
+    }
+
+    fn b1(self: *Gamepads, n: u2) bool {
+        return self.released(n, w4.BUTTON_1);
+    }
+
+    fn b2(self: *Gamepads, n: u2) bool {
+        return self.released(n, w4.BUTTON_2);
+    }
+
+    fn released(self: *Gamepads, n: u2, btn: u8) bool {
+        return !(self.data[n] & btn != 0) and (self.prev[n] & btn != 0);
     }
 };
 

@@ -1,10 +1,8 @@
 const std = @import("std");
 const w4 = @import("w4");
 
-// 640 ought to be enough for anybody.
-var memory: [640]u8 = undefined;
-var fba = std.heap.FixedBufferAllocator.init(&memory);
-const allocator = fba.allocator();
+const screen_width: f32 = @floatFromInt(w4.SCREEN_SIZE);
+const screen_height: f32 = @floatFromInt(w4.SCREEN_SIZE);
 
 // Coldfire GB Palette
 // https://lospec.com/palette-list/coldfire-gb
@@ -14,6 +12,34 @@ const palette: [4]u32 = .{
     0xd17c7c, // Orange
     0xf6c6a8, // Yellow
 };
+
+const sqrt = std.math.sqrt;
+
+var prng = std.rand.DefaultPrng.init(0);
+const random = prng.random();
+
+// 640 ought to be enough for anybody.
+var memory: [640]u8 = undefined;
+var fba = std.heap.FixedBufferAllocator.init(&memory);
+const allocator = fba.allocator();
+
+const ball_radius = 2;
+const line_args = LineArgs{ .radius = 3 };
+
+const Pair = @Vector(2, *Ball);
+
+var lines = std.BoundedArray(Line, 8).init(0) catch {};
+var balls = std.BoundedArray(Ball, 256).init(0) catch {};
+var pairs = std.BoundedArray(Pair, 128).init(0) catch {};
+var fakes = std.BoundedArray(Ball, 128).init(0) catch {};
+
+var selected_ball: ?*Ball = null;
+var selected_line: ?*Line = null;
+var selected_line_start: bool = false;
+
+var biggest: f32 = 0;
+
+var mouse: Mouse = .{};
 
 export fn start() void {
     init();
@@ -25,75 +51,24 @@ export fn update() void {
     draw();
 }
 
-const sqrt = std.math.sqrt;
-
-const screen_width: f32 = @floatFromInt(w4.SCREEN_SIZE);
-const screen_height: f32 = @floatFromInt(w4.SCREEN_SIZE);
-
-const ball_radius = 2;
-const line_args = LineArgs{ .radius = 3 };
-
-var biggest: f32 = 0;
-
-const Pair = @Vector(2, *Ball);
-
-var lines = std.BoundedArray(Line, 8).init(0) catch {};
-var balls = std.BoundedArray(Ball, 128).init(0) catch {};
-
-var selected_ball: ?*Ball = null;
-var selected_line: ?*Line = null;
-var selected_line_start: bool = false;
-
-var prng = std.rand.DefaultPrng.init(0);
-const random = prng.random();
-
-fn newBall(x: f32, y: f32, args: BallArgs) Ball {
-    return .{
-        .px = x,
-        .py = y,
-        .radius = args.radius,
-        .mass = args.radius * 10,
-    };
-}
-
-fn appendBall(x: f32, y: f32, args: BallArgs) void {
-    balls.append(newBall(x, y, args)) catch {};
-}
-
-fn addLine(sx: f32, sy: f32, ex: f32, ey: f32, args: LineArgs) void {
-    lines.append(.{
-        .sx = sx,
-        .sy = sy,
-        .ex = ex,
-        .ey = ey,
-        .radius = args.radius,
-    }) catch {};
-}
-
 fn fillCircle(x: f32, y: f32, r: f32, c: Color) void {
     w4.DRAW_COLORS.* = color(c);
-    w4.oval(@intFromFloat(x - r), @intFromFloat(y - r), @intFromFloat(r * 2), @intFromFloat(r * 2));
+    w4.oval(
+        @intFromFloat(x - r),
+        @intFromFloat(y - r),
+        @intFromFloat(r * 2),
+        @intFromFloat(r * 2),
+    );
 }
 
 fn drawLine(x1: f32, y1: f32, x2: f32, y2: f32, c: Color) void {
     w4.DRAW_COLORS.* = color(c);
-    w4.line(@intFromFloat(x1), @intFromFloat(y1), @intFromFloat(x2), @intFromFloat(y2));
-}
-
-fn doCirclesOverlap(x1: f32, y1: f32, r1: f32, x2: f32, y2: f32, r2: f32) bool {
-    return @abs(
-        (x1 - x2) * (x1 - x2) + (y1 - y2) * (y1 - y2),
-    ) <= (r1 + r2) * (r1 + r2);
-}
-
-fn isPointInCircle(x1: f32, y1: f32, r1: f32, px: f32, py: f32) bool {
-    return @abs(
-        (x1 - px) * (x1 - px) + (y1 - py) * (y1 - py),
-    ) < (r1 * r1);
-}
-
-fn color(c: Color) u3 {
-    return @intFromEnum(c);
+    w4.line(
+        @intFromFloat(x1),
+        @intFromFloat(y1),
+        @intFromFloat(x2),
+        @intFromFloat(y2),
+    );
 }
 
 fn clear(c: u8) void {
@@ -129,6 +104,11 @@ fn pixel(x: i32, y: i32) void {
     w4.FRAMEBUFFER[idx] = (c << shift) | (w4.FRAMEBUFFER[idx] & ~mask);
 }
 
+fn text(str: []const u8, x: i32, y: i32, c: Color) void {
+    w4.DRAW_COLORS.* = color(c);
+    w4.text(str, x, y);
+}
+
 fn init() void {
     w4.PALETTE.* = palette;
 
@@ -152,7 +132,9 @@ fn input() void {
     mouse.update();
 
     if (mouse.rightReleased()) {
-        var ball = newBall(mouse.x, mouse.y, .{ .radius = 1 + (@round(random.float(f32) * 4)) });
+        var ball = newBall(mouse.x, mouse.y, .{
+            .radius = 1 + (@round(random.float(f32) * 4)),
+        });
 
         balls.append(ball) catch {};
     }
@@ -205,9 +187,6 @@ fn input() void {
     }
 }
 
-var colliding_pairs = std.BoundedArray(Pair, 256).init(0) catch {};
-var fake_balls = std.BoundedArray(Ball, 128).init(0) catch {};
-
 fn simulate() void {
     const stable: f32 = 0.05;
     const sim_updates: usize = 4;
@@ -220,8 +199,8 @@ fn simulate() void {
         }
 
         for (0..max_sim_steps) |_| {
-            colliding_pairs.len = 0;
-            fake_balls.len = 0;
+            pairs.len = 0;
+            fakes.len = 0;
 
             for (balls.slice()) |*ball| {
                 if (ball.sim_time_remaining > 0.0) {
@@ -241,10 +220,10 @@ fn simulate() void {
                     if (ball.px >= screen_width) ball.px -= screen_width;
                     if (ball.py - ball.radius >= screen_height) ball.py -= screen_height + ball.radius;
 
-                    if (ball.py < -200) ball.py = 68;
-                    if (ball.py > 336) ball.py = 68;
-                    if (ball.px < -200) ball.px = 120;
-                    if (ball.px > 440) ball.px = 120;
+                    if (ball.py < -100) ball.py = 80;
+                    if (ball.py > 260) ball.py = 80;
+                    if (ball.px < -100) ball.px = 80;
+                    if (ball.px > 260) ball.px = 80;
 
                     if (@abs(ball.vx * ball.vx + ball.vy * ball.vy) < stable) {
                         ball.vx = 0;
@@ -273,7 +252,7 @@ fn simulate() void {
                     );
 
                     if (distance <= (ball.radius + edge.radius) and !(ball.vx == 0 and ball.vy == 0)) {
-                        var fakeball: *Ball = fake_balls.addOneAssumeCapacity();
+                        var fakeball: *Ball = fakes.addOneAssumeCapacity();
 
                         fakeball.radius = edge.radius;
                         fakeball.mass = ball.mass * 0.8;
@@ -287,7 +266,7 @@ fn simulate() void {
                         ball.px -= overlap * (ball.px - fakeball.px) / distance;
                         ball.py -= overlap * (ball.py - fakeball.py) / distance;
 
-                        colliding_pairs.append(.{ ball, fakeball }) catch {};
+                        pairs.append(.{ ball, fakeball }) catch {};
                     }
                 }
 
@@ -307,7 +286,7 @@ fn simulate() void {
                         target.px += overlap * (ball.px - target.px) / distance;
                         target.py += overlap * (ball.py - target.py) / distance;
 
-                        colliding_pairs.append(.{ ball, target }) catch {};
+                        pairs.append(.{ ball, target }) catch {};
                     }
                 }
 
@@ -322,7 +301,7 @@ fn simulate() void {
 
             const efficiency = 1.00;
 
-            for (colliding_pairs.slice()) |pair| {
+            for (pairs.slice()) |pair| {
                 var ball = pair[0];
                 var target = pair[1];
 
@@ -351,7 +330,7 @@ fn simulate() void {
                 target.vy = ty * t2 + ny * m2;
             }
 
-            for (colliding_pairs.slice()) |pair| {
+            for (pairs.slice()) |pair| {
                 var ball = pair[0];
                 var target = pair[1];
 
@@ -383,18 +362,6 @@ fn simulate() void {
     for (balls.slice()) |*ball| {
         if (ball.radius > biggest) biggest = ball.radius;
     }
-}
-
-fn text(str: []const u8, x: i32, y: i32, c: Color) void {
-    w4.DRAW_COLORS.* = color(c);
-    w4.text(str, x, y);
-}
-
-fn anyText(x: i32, y: i32, c: Color, args: anytype) void {
-    const str = std.fmt.allocPrint(allocator, "{any}", args) catch "";
-    defer allocator.free(str);
-
-    text(str, x, y, c);
 }
 
 fn draw() void {
@@ -459,8 +426,54 @@ fn draw() void {
         const ball = selected_ball.?;
 
         drawLine(ball.px, ball.py, mouse.x, mouse.y, .Green);
-        fillCircle(ball.px, ball.py, ball.radius, .Yellow);
+        fillCircle(ball.px, ball.py, ball.radius, .Green);
     }
+}
+
+fn newBall(x: f32, y: f32, args: BallArgs) Ball {
+    return .{
+        .px = x,
+        .py = y,
+        .radius = args.radius,
+        .mass = args.radius * 10,
+    };
+}
+
+fn appendBall(x: f32, y: f32, args: BallArgs) void {
+    balls.append(newBall(x, y, args)) catch {};
+}
+
+fn addLine(sx: f32, sy: f32, ex: f32, ey: f32, args: LineArgs) void {
+    lines.append(.{
+        .sx = sx,
+        .sy = sy,
+        .ex = ex,
+        .ey = ey,
+        .radius = args.radius,
+    }) catch {};
+}
+
+fn doCirclesOverlap(x1: f32, y1: f32, r1: f32, x2: f32, y2: f32, r2: f32) bool {
+    return @abs(
+        (x1 - x2) * (x1 - x2) + (y1 - y2) * (y1 - y2),
+    ) <= (r1 + r2) * (r1 + r2);
+}
+
+fn isPointInCircle(x1: f32, y1: f32, r1: f32, px: f32, py: f32) bool {
+    return @abs(
+        (x1 - px) * (x1 - px) + (y1 - py) * (y1 - py),
+    ) < (r1 * r1);
+}
+
+fn color(c: Color) u3 {
+    return @intFromEnum(c);
+}
+
+fn anyText(x: i32, y: i32, c: Color, args: anytype) void {
+    const str = std.fmt.allocPrint(allocator, "{any}", args) catch "";
+    defer allocator.free(str);
+
+    text(str, x, y, c);
 }
 
 fn ballColor(f: f32) Color {
@@ -533,7 +546,6 @@ const Mouse = struct {
         return !(self.data.b & w4.MOUSE_RIGHT != 0) and (self.prev.b & w4.MOUSE_RIGHT != 0);
     }
 };
-var mouse: Mouse = .{};
 
 const Ball = struct {
     px: f32 = 0,

@@ -1,0 +1,11 @@
+.{
+    .name = "w4-balls",
+    .version = "0.0.0",
+    .paths = .{""},
+    .dependencies = .{
+        .w4 = .{
+            .url = "https://github.com/peterhellberg/w4/archive/refs/tags/v0.0.1.tar.gz",
+            .hash = "1220b63b2d6b572e4f2d0af0df3c7c3e01e7e352bd239ce93bc43beca9ce912bd8d4",
+        },
+    },
+}

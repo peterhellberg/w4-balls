@@ -24,7 +24,7 @@ var fba = std.heap.FixedBufferAllocator.init(&memory);
 const allocator = fba.allocator();
 
 const ball_radius = 2;
-const line_args = LineArgs{ .radius = 3 };
+const line_args = LineArgs{ .radius = 6 };
 
 const Pair = @Vector(2, *Ball);
 
@@ -131,9 +131,9 @@ fn init() void {
 fn input() void {
     mouse.update();
 
-    if (mouse.rightReleased()) {
+    if (mouse.rightReleased() or (w4.GAMEPAD1.* & w4.BUTTON_1 != 0)) {
         var ball = newBall(mouse.x, mouse.y, .{
-            .radius = 1 + (@round(random.float(f32) * 4)),
+            .radius = 1 + (@round(random.float(f32) * 5)),
         });
 
         balls.append(ball) catch {};

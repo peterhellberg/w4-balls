@@ -190,10 +190,10 @@ fn input() void {
 }
 
 fn simulate() void {
-    const stable: f32 = 0.05;
-    const sim_updates: usize = 4;
-    const max_sim_steps: usize = 15;
-    const sim_elapsed_time: f32 = 0.008;
+    const stable: f32 = 0.08;
+    const sim_updates: usize = 3;
+    const max_sim_steps: usize = 10;
+    const sim_elapsed_time: f32 = 0.007;
 
     for (0..sim_updates) |_| {
         for (balls.slice()) |*ball| {
@@ -209,8 +209,8 @@ fn simulate() void {
                     ball.ox = ball.px;
                     ball.oy = ball.py;
 
-                    ball.ax = -ball.vx * 0.75;
-                    ball.ay = -ball.vy * 0.75 + 100.0;
+                    ball.ax = -ball.vx * 0.4;
+                    ball.ay = -ball.vy * 0.4 + 250.0;
 
                     ball.vx += ball.ax * ball.sim_time_remaining;
                     ball.vy += ball.ay * ball.sim_time_remaining;
@@ -230,6 +230,9 @@ fn simulate() void {
                     if (@abs(ball.vx * ball.vx + ball.vy * ball.vy) < stable) {
                         ball.vx = 0;
                         ball.vy = 0;
+
+                        ball.ax = 0;
+                        ball.ay = 0;
                     }
                 }
             }

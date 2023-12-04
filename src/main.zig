@@ -134,7 +134,7 @@ fn input() void {
     gamepads.update();
 
     if (mouse.rightReleased() or gamepads.b1(0) or gamepads.b2(0)) {
-        var ball = newBall(mouse.x, mouse.y, .{
+        const ball = newBall(mouse.x, mouse.y, .{
             .radius = 1 + (@round(random.float(f32) * 5)),
         });
 
